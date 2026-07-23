@@ -38,7 +38,6 @@ Most cleaners either scare you with dark-pattern “threats,” or go so deep th
 | **Confirm by default** | Real deletes ask you first (unless you pass `-y`) |
 | **Zero bloat** | Pure Bash + macOS built-ins — no agents, no accounts, no GUI tax |
 
-Inspired by tools like [Mole](https://github.com/tw93/mole) and the idea behind CleanMyMac — rebuilt as a focused, open, terminal-native polisher.
 
 ---
 
