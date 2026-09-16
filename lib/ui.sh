@@ -4,8 +4,6 @@
 
 # ── Branding ──────────────────────────────────────────────────────────
 ui_banner() {
-  local cols
-  cols=$(term_cols)
   printf "\n"
   printf "  ${CYAN}${BOLD}"
   cat << 'EOF'
@@ -18,10 +16,30 @@ EOF
   printf "  ${GRAY}v%s${RESET}\n\n" "$LUSTR_VERSION"
 }
 
-ui_divider() {
-  local cols char="${1:-─}"
+ui_content_width() {
+  local cols width
   cols=$(term_cols)
-  local width=$(( cols < 72 ? cols - 4 : 68 ))
+  width=$(( cols - 4 ))
+  (( width < 40 )) && width=40
+  (( width > 96 )) && width=96
+  echo "$width"
+}
+
+ui_truncate() {
+  local text="$1"
+  local max="${2:-20}"
+  (( max < 4 )) && { printf "%s" "$text"; return; }
+  if (( ${#text} > max )); then
+    printf "%s..." "${text:0:max-3}"
+  else
+    printf "%s" "$text"
+  fi
+}
+
+ui_divider() {
+  local char="${1:-─}"
+  local width
+  width=$(ui_content_width)
   printf "  ${DARK}"
   printf "%*s" "$width" "" | tr ' ' "$char"
   printf "${RESET}\n"
@@ -29,13 +47,22 @@ ui_divider() {
 
 ui_section() {
   local title="$1"
-  printf "\n  ${VIOLET}${BOLD}%s${RESET}\n" "$title"
+  printf "\n"
+  ui_divider "─"
+  printf "  ${VIOLET}${BOLD}%s${RESET}\n" "$title"
   ui_divider "·"
 }
 
 ui_item() {
   # ui_item STATUS LABEL SIZE [DETAIL]
   local status="$1" label="$2" size="${3:-}" detail="${4:-}"
+  local cols label_w detail_w
+  cols=$(ui_content_width)
+  label_w=$(( cols - 24 ))
+  (( label_w < 16 )) && label_w=16
+  (( label_w > 48 )) && label_w=48
+  detail_w=$(( cols - label_w - 20 ))
+  (( detail_w < 8 )) && detail_w=8
   local icon color
   case "$status" in
     ok|done|clean) icon="✓"; color="$GREEN" ;;
@@ -47,12 +74,12 @@ ui_item() {
     *)             icon="·"; color="$CYAN" ;;
   esac
 
-  printf "  ${color}%s${RESET}  %-36s" "$icon" "$label"
+  printf "  ${color}%s${RESET}  %-*s" "$icon" "$label_w" "$(ui_truncate "$label" "$label_w")"
   if [[ -n "$size" ]]; then
     printf "  ${BOLD}%10s${RESET}" "$size"
   fi
   if [[ -n "$detail" ]]; then
-    printf "  ${DIM}%s${RESET}" "$detail"
+    printf "  ${DIM}%s${RESET}" "$(ui_truncate "$detail" "$detail_w")"
   fi
   printf "\n"
 }
@@ -152,18 +179,19 @@ ui_menu() {
   local choice
   ui_banner
   ui_disk_meter
-  printf "\n"
+  ui_section "Main menu"
   printf "  ${BOLD}${WHITE}What would you like to do?${RESET}\n\n"
-  printf "  ${CYAN}1${RESET}  ${WHITE}Scan${RESET}      ${DIM}Find reclaimable junk (safe preview)${RESET}\n"
-  printf "  ${CYAN}2${RESET}  ${WHITE}Clean${RESET}     ${DIM}Deep clean caches, logs & trash${RESET}\n"
-  printf "  ${CYAN}3${RESET}  ${WHITE}Analyze${RESET}   ${DIM}See what's eating your disk${RESET}\n"
-  printf "  ${CYAN}4${RESET}  ${WHITE}Status${RESET}    ${DIM}Live system health snapshot${RESET}\n"
-  printf "  ${CYAN}5${RESET}  ${WHITE}Dry run${RESET}   ${DIM}Simulate a full clean${RESET}\n"
-  printf "  ${CYAN}q${RESET}  ${WHITE}Quit${RESET}\n"
+  printf "  ${CYAN}[1]${RESET}  ${WHITE}Scan${RESET}      ${DIM}Find reclaimable junk (safe preview)${RESET}\n"
+  printf "  ${CYAN}[2]${RESET}  ${WHITE}Clean${RESET}     ${DIM}Deep clean caches, logs & trash${RESET}\n"
+  printf "  ${CYAN}[3]${RESET}  ${WHITE}Analyze${RESET}   ${DIM}See what's using disk space most${RESET}\n"
+  printf "  ${CYAN}[4]${RESET}  ${WHITE}Status${RESET}    ${DIM}Live system health snapshot${RESET}\n"
+  printf "  ${CYAN}[5]${RESET}  ${WHITE}Dry run${RESET}   ${DIM}Simulate full clean with zero deletes${RESET}\n"
+  printf "  ${CYAN}[q]${RESET}  ${WHITE}Quit${RESET}\n"
   printf "\n"
+  ui_dim "Tip: you can also type scan / clean / analyze / status."
   printf "  ${DIM}Select${RESET} ${CYAN}›${RESET} "
   read -r choice || true
-  echo "$choice"
+  echo "${choice// /}"
 }
 
 ui_help() {

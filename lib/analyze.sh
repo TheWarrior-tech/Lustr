@@ -43,14 +43,22 @@ lustr_analyze() {
   stop_spinner
 
   # Sort by size desc
-  local sorted line size name path max=0 pct bar_w=24 filled empty
+  local sorted line size name path max=0 pct bar_w filled empty
+  local content_w loc_w
+  content_w=$(ui_content_width)
+  loc_w=$(( content_w / 3 ))
+  (( loc_w < 16 )) && loc_w=16
+  (( loc_w > 28 )) && loc_w=28
+  bar_w=$(( content_w - loc_w - 18 ))
+  (( bar_w < 12 )) && bar_w=12
+  (( bar_w > 44 )) && bar_w=44
   sorted=$(printf '%s\n' "${rows[@]}" | sort -t'|' -k1 -nr)
 
   # Find max for relative bars
   max=$(echo "$sorted" | head -1 | cut -d'|' -f1)
   [[ -z "$max" || "$max" -eq 0 ]] && max=1
 
-  printf "  ${DIM}%-22s  %10s   usage${RESET}\n" "Location" "Size"
+  printf "  ${DIM}%-*s  %10s   usage${RESET}\n" "$loc_w" "Location" "Size"
   ui_divider "·"
 
   while IFS= read -r line; do
@@ -63,8 +71,8 @@ lustr_analyze() {
     filled=$(( pct * bar_w / 100 ))
     empty=$(( bar_w - filled ))
 
-    printf "  ${WHITE}%-22s${RESET}  ${BOLD}%10s${RESET}   ${TEAL}" \
-      "$name" "$(bytes_human "$size")"
+    printf "  ${WHITE}%-*s${RESET}  ${BOLD}%10s${RESET}   ${TEAL}" \
+      "$loc_w" "$(ui_truncate "$name" "$loc_w")" "$(bytes_human "$size")"
     printf "%*s" "$filled" "" | tr ' ' '█'
     printf "${DARK}"
     printf "%*s" "$empty" "" | tr ' ' '░'
