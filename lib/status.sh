@@ -72,13 +72,18 @@ lustr_status() {
   fi
 
   # Top CPU processes (brief)
+  local content_w proc_w
+  content_w=$(ui_content_width)
+  proc_w=$(( content_w - 24 ))
+  (( proc_w < 18 )) && proc_w=18
+  (( proc_w > 42 )) && proc_w=42
   printf "\n  ${VIOLET}${BOLD}Top processes${RESET}\n"
   ui_divider "·"
   while read -r cpu rss comm; do
     rss_b=$(( rss * 1024 ))
     base=$(basename "$comm" 2>/dev/null || echo "$comm")
-    printf "  ${WHITE}%-28s${RESET}  ${CYAN}%5s%%${RESET}  ${DIM}%s${RESET}\n" \
-      "$base" "$cpu" "$(bytes_human "$rss_b")"
+    printf "  ${WHITE}%-*s${RESET}  ${CYAN}%5s%%${RESET}  ${DIM}%s${RESET}\n" \
+      "$proc_w" "$(ui_truncate "$base" "$proc_w")" "$cpu" "$(bytes_human "$rss_b")"
   done < <(ps -Aro %cpu,rss,comm 2>/dev/null | head -6 | tail -5)
 
   printf "\n"

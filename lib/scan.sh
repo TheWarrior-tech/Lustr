@@ -227,8 +227,8 @@ lustr_scan_print() {
 
   printf "\n"
   ui_divider
-  printf "  ${BOLD}Total reclaimable${RESET}                  ${CYAN}${BOLD}%10s${RESET}\n" \
-    "$(bytes_human "$SCAN_TOTAL")"
+  printf "  ${BOLD}%-24s${RESET}  ${CYAN}${BOLD}%10s${RESET}\n" \
+    "Total reclaimable" "$(bytes_human "$SCAN_TOTAL")"
   ui_divider
   printf "\n"
   ui_dim "Only safe junk is listed. Documents, apps, and personal data are never touched."
