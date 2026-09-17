@@ -56,6 +56,8 @@ lustr uninstall       Remove Lustr
 lustr help            Show help
 ```
 
+`lustr update` refreshes the currently installed copy in place, including custom install paths.
+
 ### Options
 
 | Flag | Description |
