@@ -122,7 +122,13 @@ cmd_update() {
   ui_section "Update"
   ui_info "Fetching latest Lustr..."
   local url="https://raw.githubusercontent.com/TheWarrior-tech/Lustr/main/install.sh"
-  if curl -fsSL "$url" | bash; then
+  local -a installer_env=()
+  if [[ ! -d "$LUSTR_ROOT/.git" ]]; then
+    installer_env+=("LUSTR_INSTALL_DIR=$LUSTR_ROOT")
+    ui_dim "Updating installed copy at $LUSTR_ROOT"
+  fi
+
+  if curl -fsSL "$url" | env "${installer_env[@]}" bash; then
     ui_success "Lustr is up to date."
   else
     ui_error "Update failed. Check your network or install manually."
