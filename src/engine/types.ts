@@ -15,11 +15,17 @@ export interface CleanTarget {
   id: string;
   name: string;
   category: Category;
+  /** Absolute path or template with {home} / {volume} */
   path: string;
+  /** How to clean: wipe contents, remove path, or run a command */
   mode: "contents" | "remove" | "command";
+  /** Optional shell command (preferred when available) */
   command?: string;
+  /** Only on external volumes when true */
   volumeOnly?: boolean;
+  /** Opt-in (e.g. Archives) */
   optional?: boolean;
+  /** Estimated risk: low = always safe, medium = regenerable but costly */
   risk: "low" | "medium";
 }
 
@@ -29,7 +35,7 @@ export interface ScanItem {
   category: Category;
   path: string;
   bytes: number;
-  volume: string;
+  volume: string; // "/" for internal, mount path for external
   optional?: boolean;
   risk: "low" | "medium";
 }
@@ -54,7 +60,9 @@ export interface CleanOptions {
   dryRun: boolean;
   yes: boolean;
   includeOptional: boolean;
+  /** Limit to specific target ids */
   only?: string[];
+  /** Include external volumes */
   includeVolumes: boolean;
 }
 

@@ -26,7 +26,8 @@ export async function dirSize(path: string): Promise<number> {
 
 export async function pathExists(path: string): Promise<boolean> {
   try {
-    if (await Bun.file(path).exists()) return true;
+    const s = await Bun.file(path).exists();
+    if (s) return true;
   } catch {}
   try {
     const proc = Bun.spawn(["test", "-e", path]);
