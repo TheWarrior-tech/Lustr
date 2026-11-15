@@ -7,6 +7,7 @@
 import { scan } from "./engine/scan";
 import { clean } from "./engine/clean";
 import { bytesHuman } from "./utils/size";
+import type { CleanMode } from "./engine/types";
 
 const VERSION = "2.0.0";
 
@@ -23,9 +24,14 @@ function printHelp() {
     lustr help            This help
     lustr version         Print version
 
+  Modes
+    (default)             Normal clean — everyday caches & logs
+    --deep                Deep clean — all junk targets + volume indexes
+
   Options
     -n, --dry-run         Never delete
     -y, --yes             Skip confirmation
+    --deep                Use deep clean target set
     --include-optional    Include Archives / optional volume indexes
     --no-volumes          Skip external drives
 
@@ -42,8 +48,10 @@ async function main() {
 
   const dryRun = flags.has("-n") || flags.has("--dry-run");
   const yes = flags.has("-y") || flags.has("--yes");
-  const includeOptional = flags.has("--include-optional");
+  const deep = flags.has("--deep");
+  const includeOptional = flags.has("--include-optional") || deep;
   const includeVolumes = !flags.has("--no-volumes");
+  const cleanMode: CleanMode = deep ? "deep" : "normal";
 
   if (flags.has("-h") || flags.has("--help") || cmd === "help") {
     printHelp();
@@ -54,7 +62,6 @@ async function main() {
     return;
   }
 
-  // Interactive TUI (default)
   if (!cmd || cmd === "menu" || cmd === "ui" || cmd === "tui") {
     try {
       const { runTui } = await import("./ui/app");
@@ -63,8 +70,8 @@ async function main() {
       console.error("TUI failed to start (OpenTUI native bindings required on macOS).");
       console.error("Falling back to CLI scan.\n");
       console.error(String(err));
-      // Fallback: scan
-      const result = await scan({ includeVolumes, includeOptional });
+      const result = await scan({ includeVolumes, includeOptional, cleanMode });
+      console.log(`Mode: ${cleanMode}`);
       console.log(`Total reclaimable: ${bytesHuman(result.totalBytes)}`);
       for (const item of result.items.slice(0, 25)) {
         console.log(`  ${bytesHuman(item.bytes).padStart(10)}  ${item.name}`);
@@ -74,25 +81,30 @@ async function main() {
   }
 
   if (cmd === "scan") {
-    console.log("Scanning…");
-    const result = await scan({ includeVolumes, includeOptional });
-    console.log(`\nReclaimable: ${bytesHuman(result.totalBytes)} across ${result.items.length} items\n`);
+    console.log(`Scanning (${cleanMode})…`);
+    const result = await scan({ includeVolumes, includeOptional, cleanMode });
+    console.log(
+      `\nReclaimable: ${bytesHuman(result.totalBytes)} across ${result.items.length} items [${cleanMode}]\n`,
+    );
     for (const item of result.items) {
       const vol = item.volume === "/" ? "" : ` [${item.volume}]`;
-      console.log(`  ${bytesHuman(item.bytes).padStart(10)}  ${item.name}${vol}`);
+      const star = item.depth === "deep" ? " ★" : "";
+      console.log(`  ${bytesHuman(item.bytes).padStart(10)}  ${item.name}${vol}${star}`);
     }
     console.log();
     return;
   }
 
   if (cmd === "clean") {
-    console.log("Scanning…");
-    const result = await scan({ includeVolumes, includeOptional });
+    console.log(`Scanning (${cleanMode})…`);
+    const result = await scan({ includeVolumes, includeOptional, cleanMode });
     if (result.totalBytes === 0) {
       console.log("Already clean — nothing to do.");
       return;
     }
-    console.log(`\nWould reclaim ~${bytesHuman(result.totalBytes)} (${result.items.length} items)\n`);
+    console.log(
+      `\nWould reclaim ~${bytesHuman(result.totalBytes)} (${result.items.length} items) [${cleanMode}]\n`,
+    );
     for (const item of result.items.slice(0, 20)) {
       console.log(`  ${bytesHuman(item.bytes).padStart(10)}  ${item.name}`);
     }
@@ -106,7 +118,6 @@ async function main() {
     if (!yes) {
       console.log("\nThis permanently deletes caches, logs, and Trash contents.");
       console.log("Documents, Photos, Mail, Keychains are never touched.");
-      // Non-interactive confirm via readline would need tty; use -y for scripts
       const readline = await import("node:readline");
       const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
       const answer = await new Promise<string>((resolve) => {
@@ -125,8 +136,9 @@ async function main() {
       yes: true,
       includeOptional,
       includeVolumes,
+      cleanMode,
     });
-    console.log(`\nFreed ~${bytesHuman(report.freedBytes)}`);
+    console.log(`\nFreed ~${bytesHuman(report.freedBytes)} [${report.mode}]`);
     for (const i of report.items.filter((x) => x.status === "done")) {
       console.log(`  ✓ ${i.name}  ${bytesHuman(i.bytes)}`);
     }
