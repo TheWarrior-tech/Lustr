@@ -1,7 +1,7 @@
-/** Clean engine with safety + dry-run */
+/** Clean engine with safety + dry-run + mode / volume filters */
 
 import type { CleanOptions, CleanReport, ScanItem } from "./types";
-import { HOME_TARGETS, VOLUME_TARGETS, resolvePath } from "./targets";
+import { HOME_TARGETS, VOLUME_TARGETS } from "./targets";
 import { buildAllowedRoots, isPathSafe } from "./safety";
 import { dirSize, pathExists } from "../utils/size";
 import { listVolumes } from "./volumes";
@@ -34,21 +34,41 @@ export async function clean(
 ): Promise<CleanReport> {
   const homeDir = process.env.HOME ?? "";
   const volumes = await listVolumes();
-  const volumePaths = volumes.filter((v) => v.isExternal).map((v) => v.path);
-  const allowed = buildAllowedRoots(homeDir, volumePaths);
+  const allExternal = volumes.filter((v) => v.isExternal).map((v) => v.path);
+
+  const selectedVols =
+    options.volumePaths && options.volumePaths.length > 0
+      ? options.volumePaths
+      : options.includeVolumes
+        ? ["/", ...allExternal]
+        : ["/"];
+
+  const volumePathsForSafety = selectedVols.filter((p) => p !== "/");
+  const allowed = buildAllowedRoots(
+    homeDir,
+    volumePathsForSafety.length ? volumePathsForSafety : allExternal,
+  );
 
   const report: CleanReport = {
     freedBytes: 0,
     items: [],
     dryRun: options.dryRun,
+    mode: options.cleanMode,
   };
 
-  const selected = options.only
-    ? scanItems.filter((i) => options.only!.some((id) => i.id === id || i.id.startsWith(id + ":")))
-    : scanItems.filter((i) => options.includeOptional || !i.optional);
+  let selected = options.only
+    ? scanItems.filter((i) =>
+        options.only!.some((id) => i.id === id || i.id.startsWith(id + ":")),
+      )
+    : [...scanItems];
+
+  selected = selected.filter((i) => selectedVols.includes(i.volume));
+
+  if (!options.includeOptional && options.cleanMode !== "deep") {
+    selected = selected.filter((i) => !i.optional);
+  }
 
   for (const item of selected) {
-    // Resolve target definition
     const baseId = item.id.split(":")[0];
     const def =
       HOME_TARGETS.find((t) => t.id === baseId) ??
@@ -59,7 +79,6 @@ export async function clean(
       continue;
     }
 
-    // Command mode
     if (def.mode === "command" && def.command) {
       if (options.dryRun) {
         report.items.push({ id: item.id, name: item.name, bytes: item.bytes, status: "dry" });
@@ -102,13 +121,17 @@ export async function clean(
     try {
       let freed = 0;
       if (def.mode === "contents") {
-        // Prefer tool command if present
         if (def.command) await runCommand(def.command);
         freed = await rmContents(path);
       } else {
         freed = await rmPath(path);
       }
-      report.items.push({ id: item.id, name: item.name, bytes: freed || item.bytes, status: "done" });
+      report.items.push({
+        id: item.id,
+        name: item.name,
+        bytes: freed || item.bytes,
+        status: "done",
+      });
       report.freedBytes += freed || item.bytes;
     } catch {
       report.items.push({ id: item.id, name: item.name, bytes: 0, status: "fail" });
