@@ -14,6 +14,46 @@ A premium terminal cleaner for macOS — rebuilt from the ground up with [OpenTU
 
 ---
 
+## Install (one command)
+
+Installs **Bun** (if missing), Lustr, all dependencies, and puts `lustr` on your PATH:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/TheWarrior-tech/Lustr/main/install.sh | bash
+```
+
+Then open a new terminal (or `source ~/.zshrc`) and run:
+
+```bash
+lustr
+```
+
+### What the installer does
+
+1. Installs [Bun](https://bun.sh) if it is not already on your system  
+2. Downloads Lustr into `~/.lustr`  
+3. Runs `bun install` (OpenTUI + runtime deps)  
+4. Creates a `lustr` launcher in `~/.local/bin` (or `/usr/local/bin`)
+
+### Uninstall
+
+```bash
+rm -rf ~/.lustr
+rm -f ~/.local/bin/lustr /usr/local/bin/lustr
+```
+
+### Manual / developer install
+
+```bash
+git clone https://github.com/TheWarrior-tech/Lustr.git
+cd Lustr
+bun install
+bun link          # optional: global `lustr` command
+bun run src/index.ts
+```
+
+---
+
 ## What's new in 2.0
 
 | Area | Before (1.x Bash) | 2.0 |
@@ -23,25 +63,7 @@ A premium terminal cleaner for macOS — rebuilt from the ground up with [OpenTU
 | Volumes | Home only | **External drives** (`.Trashes`, optional indexes) |
 | Runtime | Pure Bash | **Bun + TypeScript** |
 | Safety | Allow-list | Same hard safety model, expanded roots |
-
----
-
-## Install
-
-**Requires [Bun](https://bun.sh) 1.1+** (and macOS 13+).
-
-```bash
-git clone https://github.com/TheWarrior-tech/Lustr.git
-cd Lustr
-bun install
-bun link   # optional: puts `lustr` on your PATH
-```
-
-Or run in place:
-
-```bash
-bun run src/index.ts
-```
+| Install | Bash scripts only | **One command** installs Bun + deps + `lustr` |
 
 ---
 

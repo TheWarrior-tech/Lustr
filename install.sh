@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Lustr installer — one-line install for macOS
+# Lustr 2.0 — one-command installer for macOS
 # curl -fsSL https://raw.githubusercontent.com/TheWarrior-tech/Lustr/main/install.sh | bash
 set -euo pipefail
 
@@ -8,111 +8,198 @@ BRANCH="${LUSTR_BRANCH:-main}"
 INSTALL_DIR="${LUSTR_INSTALL_DIR:-$HOME/.lustr}"
 BIN_NAME="lustr"
 
-# Colors
+# ── colors ──────────────────────────────────────
 if [[ -t 1 ]]; then
   C='\033[38;5;81m'; G='\033[38;5;114m'; R='\033[38;5;203m'
-  D='\033[2m'; B='\033[1m'; Z='\033[0m'
+  Y='\033[38;5;221m'; D='\033[2m'; B='\033[1m'; Z='\033[0m'
 else
-  C=''; G=''; R=''; D=''; B=''; Z=''
+  C=''; G=''; R=''; Y=''; D=''; B=''; Z=''
 fi
 
 info()  { printf "  ${C}·${Z} %s\n" "$*"; }
 ok()    { printf "  ${G}✓${Z} %s\n" "$*"; }
+warn()  { printf "  ${Y}!${Z} %s\n" "$*"; }
 err()   { printf "  ${R}✗${Z} %s\n" "$*"; exit 1; }
 
 printf "\n"
-printf "  ${C}${B}Lustr${Z} ${D}installer${Z}\n"
+printf "  ${C}${B}Lustr 2.0${Z} ${D}installer${Z}\n"
 printf "  ${D}Polish your Mac. Keep what matters.${Z}\n\n"
 
-# macOS only
+# ── platform ────────────────────────────────────
 [[ "$(uname -s)" == "Darwin" ]] || err "Lustr requires macOS."
 
-# Dependencies
 command -v curl >/dev/null || err "curl is required."
 command -v tar  >/dev/null || err "tar is required."
 
+# ── ensure Bun ───────────────────────────────────
+ensure_bun() {
+  if command -v bun >/dev/null 2>&1; then
+    local ver
+    ver="$(bun --version 2>/dev/null || echo "?")"
+    ok "Bun ${ver} already installed"
+    return 0
+  fi
+
+  info "Bun not found — installing official Bun runtime…"
+  # Official installer puts bun in ~/.bun/bin and updates shell profile
+  curl -fsSL https://bun.sh/install | bash
+
+  # Make bun available in this shell immediately
+  export BUN_INSTALL="${BUN_INSTALL:-$HOME/.bun}"
+  export PATH="$BUN_INSTALL/bin:$PATH"
+
+  if ! command -v bun >/dev/null 2>&1; then
+    err "Bun install finished but 'bun' is not on PATH. Open a new terminal and re-run this installer."
+  fi
+  ok "Bun $(bun --version) installed"
+}
+
+ensure_bun
+
+# ── download / update Lustr ────────────────────────────
 TMP="$(mktemp -d)"
 cleanup() { rm -rf "$TMP"; }
 trap cleanup EXIT
 
-info "Downloading Lustr from GitHub..."
+info "Downloading Lustr (${BRANCH})…"
 ARCHIVE_URL="https://github.com/${REPO}/archive/refs/heads/${BRANCH}.tar.gz"
 
-if ! curl -fsSL "$ARCHIVE_URL" -o "$TMP/lustr.tar.gz" 2>/dev/null; then
-  # Fallback: git clone if tarball fails (e.g. empty repo)
-  if command -v git >/dev/null; then
-    info "Tarball unavailable — cloning repository..."
+if curl -fsSL "$ARCHIVE_URL" -o "$TMP/lustr.tar.gz" 2>/dev/null; then
+  tar -xzf "$TMP/lustr.tar.gz" -C "$TMP"
+  SRC="$(find "$TMP" -maxdepth 1 -type d -name 'Lustr-*' | head -1)"
+  [[ -n "$SRC" && -d "$SRC" ]] || err "Unexpected archive layout."
+else
+  if command -v git >/dev/null 2>&1; then
+    info "Tarball unavailable — cloning with git…"
     git clone --depth 1 --branch "$BRANCH" "https://github.com/${REPO}.git" "$TMP/repo" \
-      || err "Could not download Lustr. Is the repo public at github.com/${REPO}?"
+      || err "Could not download Lustr from github.com/${REPO}"
     SRC="$TMP/repo"
   else
     err "Could not download Lustr. Check https://github.com/${REPO}"
   fi
-else
-  tar -xzf "$TMP/lustr.tar.gz" -C "$TMP"
-  # GitHub archive extracts to Repo-branch
-  SRC="$(find "$TMP" -maxdepth 1 -type d -name 'Lustr-*' | head -1)"
-  [[ -n "$SRC" && -d "$SRC" ]] || err "Unexpected archive layout."
 fi
 
-[[ -f "$SRC/bin/lustr" ]] || err "bin/lustr missing from download."
+[[ -f "$SRC/src/index.ts" ]] || err "src/index.ts missing — is this Lustr 2.0?"
+[[ -f "$SRC/package.json" ]] || err "package.json missing."
 
-info "Installing to ${INSTALL_DIR}..."
+info "Installing to ${INSTALL_DIR}…"
 mkdir -p "$INSTALL_DIR"
-# Replace contents cleanly
-rm -rf "${INSTALL_DIR}/bin" "${INSTALL_DIR}/lib"
-cp -R "$SRC/bin" "$INSTALL_DIR/"
-cp -R "$SRC/lib" "$INSTALL_DIR/"
-# Optional docs
-[[ -f "$SRC/README.md" ]] && cp "$SRC/README.md" "$INSTALL_DIR/" || true
-[[ -f "$SRC/LICENSE" ]] && cp "$SRC/LICENSE" "$INSTALL_DIR/" || true
 
-chmod +x "$INSTALL_DIR/bin/lustr"
+# Sync tree (keep node_modules if present and same major)
+rsync -a --delete \
+  --exclude node_modules \
+  --exclude .git \
+  "$SRC/" "$INSTALL_DIR/" 2>/dev/null || {
+  # rsync may be missing; fall back to cp
+  rm -rf "$INSTALL_DIR/src" "$INSTALL_DIR/package.json" "$INSTALL_DIR/tsconfig.json"
+  cp -R "$SRC/src" "$INSTALL_DIR/"
+  cp "$SRC/package.json" "$INSTALL_DIR/"
+  [[ -f "$SRC/tsconfig.json" ]] && cp "$SRC/tsconfig.json" "$INSTALL_DIR/"
+  [[ -f "$SRC/README.md" ]] && cp "$SRC/README.md" "$INSTALL_DIR/"
+  [[ -f "$SRC/LICENSE" ]] && cp "$SRC/LICENSE" "$INSTALL_DIR/"
+  [[ -f "$SRC/.gitignore" ]] && cp "$SRC/.gitignore" "$INSTALL_DIR/"
+}
 
-# Prefer ~/.local/bin (no sudo), fall back to /usr/local/bin
+# ── install JS deps (OpenTUI etc.) ───────────────────────
+info "Installing dependencies (bun install)…"
+(
+  cd "$INSTALL_DIR"
+  # Prefer frozen lock if we ever add one; otherwise normal install
+  if [[ -f bun.lockb ]] || [[ -f bun.lock ]]; then
+    bun install --frozen-lockfile 2>/dev/null || bun install
+  else
+    bun install
+  fi
+) || err "bun install failed. Try: cd $INSTALL_DIR && bun install"
+
+ok "Dependencies installed"
+
+# ── put lustr on PATH ───────────────────────────────
+# Prefer ~/.local/bin (no sudo). Fall back to /usr/local/bin.
 LINK_DIR=""
 if [[ -d "$HOME/.local/bin" ]] || mkdir -p "$HOME/.local/bin" 2>/dev/null; then
   LINK_DIR="$HOME/.local/bin"
 elif [[ -w "/usr/local/bin" ]]; then
   LINK_DIR="/usr/local/bin"
-elif mkdir -p /usr/local/bin 2>/dev/null; then
-  LINK_DIR="/usr/local/bin"
 else
-  # last resort: try sudo for /usr/local/bin
-  if command -v sudo >/dev/null && sudo mkdir -p /usr/local/bin 2>/dev/null; then
-    LINK_DIR="/usr/local/bin"
-  fi
+  warn "Could not write to ~/.local/bin or /usr/local/bin — creating wrapper in $INSTALL_DIR/bin only"
+  LINK_DIR="$INSTALL_DIR/bin"
+  mkdir -p "$LINK_DIR"
 fi
 
-if [[ -n "$LINK_DIR" ]]; then
-  ln -sfn "$INSTALL_DIR/bin/lustr" "$LINK_DIR/lustr"
-  if [[ "$LINK_DIR" == "/usr/local/bin" ]] && [[ ! -w "$LINK_DIR/lustr" ]] && [[ ! -L "$LINK_DIR/lustr" ]]; then
-    sudo ln -sfn "$INSTALL_DIR/bin/lustr" "$LINK_DIR/lustr"
-  fi
-  ok "Linked ${LINK_DIR}/lustr"
-else
-  err "Could not create a bin symlink. Add ${INSTALL_DIR}/bin to your PATH."
-fi
+mkdir -p "$INSTALL_DIR/bin"
 
-# PATH hint
-path_ok=0
+# Wrapper: always runs the installed copy via bun (handles shebang + PATH)
+cat > "$INSTALL_DIR/bin/lustr" << WRAPPER
+#!/usr/bin/env bash
+# Lustr 2.0 launcher — generated by install.sh
+set -euo pipefail
+export BUN_INSTALL="\${BUN_INSTALL:-\$HOME/.bun}"
+export PATH="\$BUN_INSTALL/bin:\$PATH"
+exec bun run "$INSTALL_DIR/src/index.ts" "\$@"
+WRAPPER
+chmod +x "$INSTALL_DIR/bin/lustr"
+
+# Symlink into PATH dir
+ln -sf "$INSTALL_DIR/bin/lustr" "$LINK_DIR/lustr"
+ok "Linked ${LINK_DIR}/lustr → ${INSTALL_DIR}/bin/lustr"
+
+# ── PATH hint for current session ───────────────────────
+need_path_hint=0
 case ":$PATH:" in
-  *":$LINK_DIR:"*) path_ok=1 ;;
+  *":$LINK_DIR:"*) ;;
+  *) need_path_hint=1 ;;
 esac
 
-printf "\n"
-ok "Lustr installed successfully."
-printf "\n"
-
-if [[ "$path_ok" != "1" ]]; then
-  printf "  ${D}Add this to your shell profile (~/.zshrc or ~/.bashrc):${Z}\n\n"
-  printf "    ${C}export PATH=\"%s:\$PATH\"${Z}\n\n" "$LINK_DIR"
-  printf "  ${D}Then run:  source ~/.zshrc${Z}\n\n"
+# Also ensure bun is on PATH in common profiles if we just installed it
+if [[ ! -f "$HOME/.bun/bin/bun" ]]; then
+  :
+else
+  for profile in "$HOME/.zshrc" "$HOME/.bashrc" "$HOME/.bash_profile" "$HOME/.profile"; do
+    if [[ -f "$profile" ]] && ! grep -q 'BUN_INSTALL\|.bun/bin' "$profile" 2>/dev/null; then
+      {
+        echo ''
+        echo '# bun'
+        echo 'export BUN_INSTALL="$HOME/.bun"'
+        echo 'export PATH="$BUN_INSTALL/bin:$PATH"'
+      } >> "$profile"
+      info "Added Bun to PATH in $profile"
+    fi
+  done
 fi
 
-printf "  ${B}Get started${Z}\n"
-printf "    ${C}lustr${Z}              ${D}interactive menu${Z}\n"
-printf "    ${C}lustr scan${Z}         ${D}preview reclaimable junk${Z}\n"
-printf "    ${C}lustr clean -n${Z}     ${D}dry-run deep clean${Z}\n"
-printf "    ${C}lustr clean${Z}        ${D}polish your Mac${Z}\n"
+# Ensure ~/.local/bin is on PATH in zsh/bash if we used it
+if [[ "$LINK_DIR" == "$HOME/.local/bin" ]]; then
+  for profile in "$HOME/.zshrc" "$HOME/.bashrc" "$HOME/.bash_profile" "$HOME/.profile"; do
+    if [[ -f "$profile" ]] && ! grep -q '\.local/bin' "$profile" 2>/dev/null; then
+      {
+        echo ''
+        echo '# local binaries (lustr)'
+        echo 'export PATH="$HOME/.local/bin:$PATH"'
+      } >> "$profile"
+      info "Added ~/.local/bin to PATH in $profile"
+      need_path_hint=1
+    fi
+  done
+fi
+
 printf "\n"
+ok "Lustr 2.0 is ready"
+printf "\n"
+printf "  Run:\n"
+printf "    ${B}lustr${Z}                 Interactive OpenTUI dashboard\n"
+printf "    ${B}lustr scan${Z}            Scan reclaimable junk\n"
+printf "    ${B}lustr clean --dry-run${Z}  Preview only\n"
+printf "    ${B}lustr help${Z}\n"
+printf "\n"
+
+if [[ $need_path_hint -eq 1 ]]; then
+  warn "If 'lustr' is not found, open a new terminal or run:"
+  printf "    ${D}export PATH=\"%s:\$PATH\"${Z}\n" "$LINK_DIR"
+  printf "    ${D}# and for Bun if needed:${Z}\n"
+  printf "    ${D}export PATH=\"\$HOME/.bun/bin:\$PATH\"${Z}\n"
+  printf "\n"
+fi
+
+printf "  Install dir: ${D}%s${Z}\n" "$INSTALL_DIR"
+printf "  Uninstall:   ${D}rm -rf %s && rm -f %s/lustr${Z}\n\n" "$INSTALL_DIR" "$LINK_DIR"
