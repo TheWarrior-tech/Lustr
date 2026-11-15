@@ -1,6 +1,6 @@
 /**
  * Lustr OpenTUI dashboard
- * Premium interactive cleaner using @opentui/core
+ * Normal / Deep modes · multi-drive selection · scan / clean / dry-run
  */
 
 import {
@@ -11,20 +11,21 @@ import {
 } from "@opentui/core";
 import { scan } from "../engine/scan";
 import { clean } from "../engine/clean";
+import { listVolumes } from "../engine/volumes";
 import { bytesHuman } from "../utils/size";
-import type { ScanResult, ScanItem } from "../engine/types";
+import type { ScanResult, VolumeInfo, CleanMode } from "../engine/types";
 
-type Screen = "home" | "scan" | "clean" | "done";
+type Screen = "home" | "volumes" | "scan" | "done";
 
 const COLORS = {
   bg: "#0B0F14",
-  panel: "#12181F",
   accent: "#5EEAD4",
   muted: "#64748B",
   text: "#E2E8F0",
   warn: "#FBBF24",
   danger: "#F87171",
   ok: "#34D399",
+  dim: "#334155",
 };
 
 export async function runTui() {
@@ -36,7 +37,12 @@ export async function runTui() {
   let screen: Screen = "home";
   let scanResult: ScanResult | null = null;
   let statusMsg = "Ready";
-  let selected = 0;
+  let cleanMode: CleanMode = "normal";
+  let modeCursor = 0;
+  let volumes: VolumeInfo[] = [];
+  let selectedVols = new Set<string>(["/"]);
+  let volCursor = 0;
+  let busy = false;
 
   const title = new TextRenderable(renderer, {
     id: "title",
@@ -55,7 +61,7 @@ export async function runTui() {
   });
   const footer = new TextRenderable(renderer, {
     id: "footer",
-    content: "  [s] scan  [c] clean  [d] dry-run  [q] quit",
+    content: "",
     fg: COLORS.muted,
   });
   const status = new TextRenderable(renderer, {
@@ -79,119 +85,308 @@ export async function runTui() {
   });
   header.add(title);
   header.add(subtitle);
-
   panel.add(header);
   panel.add(body);
   panel.add(status);
   panel.add(footer);
   renderer.root.add(panel);
 
+  function setStatus(msg: string, color = COLORS.muted) {
+    statusMsg = msg;
+    status.content = `  ${msg}`;
+    status.fg = color;
+  }
+
   function renderHome() {
+    screen = "home";
+    const nMark = modeCursor === 0 ? "\u25b8" : " ";
+    const dMark = modeCursor === 1 ? "\u25b8" : " ";
     body.content = [
       "",
-      "  A premium terminal cleaner for macOS.",
-      "  Deep-cleans caches, logs, developer junk, and external volume trash.",
+      "  Choose a clean mode, then pick drives to scan.",
       "",
-      "  Safety model:",
-      "    • Allow-list only — never Documents, Photos, Mail, Keychains",
-      "    • Preview with scan / dry-run before any delete",
-      "    • External drives: empties .Trashes when mounted",
+      `  ${nMark}  Normal clean`,
+      "      Everyday caches, logs, Trash, package managers, browsers.",
+      "      Fast and safe \u2014 best for regular maintenance.",
       "",
-      "  Press s to scan, c to clean, d for dry-run.",
+      `  ${dMark}  Deep clean`,
+      "      Everything in Normal, plus app caches (Telegram, Adobe,",
+      "      Figma\u2026), Xcode Archives, Docker image prune, volume",
+      "      Spotlight / fseventsd indexes, more developer debris.",
+      "      Still allow-list only \u2014 never Documents, Photos, Mail.",
+      "",
+      "  \u2191\u2193  select mode   Enter  continue to drives   q  quit",
     ].join("\n");
-    status.content = `  ${statusMsg}`;
+    footer.content = "  [\u2191\u2193] mode  [Enter] drives  [q] quit";
+    setStatus(`Mode: ${cleanMode === "normal" ? "Normal" : "Deep"}`);
+  }
+
+  function renderVolumes() {
+    screen = "volumes";
+    const lines = [
+      "",
+      `  Mode: ${cleanMode === "deep" ? "Deep clean" : "Normal clean"}`,
+      "  Select which volumes to include (Space toggles):",
+      "",
+    ];
+    volumes.forEach((v, i) => {
+      const on = selectedVols.has(v.path);
+      const cursor = i === volCursor ? "\u25b8" : " ";
+      const box = on ? "[\u2713]" : "[ ]";
+      const kind = v.isExternal ? "external" : "internal";
+      const free = bytesHuman(v.freeBytes);
+      const name = v.path === "/" ? `${v.name} (this Mac)` : v.name;
+      lines.push(
+        `  ${cursor} ${box}  ${name.padEnd(28).slice(0, 28)}  ${kind.padEnd(8)}  free ${free}`,
+      );
+    });
+    if (volumes.length === 0) {
+      lines.push("  (no volumes detected)");
+    }
+    lines.push("");
+    lines.push("  \u2191\u2193 move   Space toggle   a all   n none");
+    lines.push("  Enter scan   c clean   d dry-run   Esc back");
+    body.content = lines.join("\n");
+    footer.content =
+      "  [\u2191\u2193]  [Space] toggle  [Enter] scan  [c] clean  [d] dry-run  [Esc] back";
+    const n = selectedVols.size;
+    setStatus(`${n} volume${n === 1 ? "" : "s"} selected \u00b7 ${cleanMode}`);
   }
 
   function renderScan() {
+    screen = "scan";
     if (!scanResult) {
-      body.content = "\n  Scanning…";
+      body.content = "\n  Scanning\u2026";
       return;
     }
+    const modeLabel = scanResult.mode === "deep" ? "Deep" : "Normal";
     const lines = [
       "",
-      `  Reclaimable: ${bytesHuman(scanResult.totalBytes)}  ·  ${scanResult.items.length} items`,
-      `  Volumes: ${scanResult.volumes.map((v) => v.name).join(", ")}`,
+      `  ${modeLabel} scan \u00b7 Reclaimable: ${bytesHuman(scanResult.totalBytes)}  \u00b7  ${scanResult.items.length} items`,
+      `  Volumes: ${[...selectedVols].map((p) => (p === "/" ? "Macintosh HD" : p.replace("/Volumes/", ""))).join(", ") || "\u2014"}`,
       "",
     ];
-    const top = scanResult.items.slice(0, 18);
+    const top = scanResult.items.slice(0, 16);
     for (const item of top) {
-      const mark = item.volume === "/" ? "·" : "⏏";
+      const mark = item.volume === "/" ? "\u00b7" : "\u23cf";
+      const deep = item.depth === "deep" ? " \u2605" : "";
       lines.push(
-        `  ${mark} ${item.name.padEnd(42).slice(0, 42)} ${bytesHuman(item.bytes).padStart(10)}  ${item.category}`,
+        `  ${mark} ${item.name.padEnd(40).slice(0, 40)} ${bytesHuman(item.bytes).padStart(10)}${deep}`,
       );
     }
-    if (scanResult.items.length > 18) {
-      lines.push(`  … and ${scanResult.items.length - 18} more`);
+    if (scanResult.items.length > 16) {
+      lines.push(`  \u2026 and ${scanResult.items.length - 16} more`);
     }
+    if (scanResult.items.some((i) => i.depth === "deep")) {
+      lines.push("");
+      lines.push("  \u2605 = deep-only target");
+    }
+    lines.push("");
+    lines.push("  c clean   d dry-run   v volumes   h home   q quit");
     body.content = lines.join("\n");
-    status.content = `  Scan complete · ${bytesHuman(scanResult.totalBytes)} reclaimable`;
+    footer.content = "  [c] clean  [d] dry-run  [v] volumes  [h] home  [q] quit";
+    setStatus(`Scan complete \u00b7 ${bytesHuman(scanResult.totalBytes)} reclaimable`, COLORS.ok);
   }
 
   function renderDone(msg: string) {
-    body.content = `\n  ${msg}\n`;
-    status.content = `  ${statusMsg}`;
+    screen = "done";
+    body.content = `\n  ${msg}\n\n  h home   v volumes   s rescan   q quit\n`;
+    footer.content = "  [h] home  [v] volumes  [s] scan  [q] quit";
+  }
+
+  async function loadVolumes() {
+    volumes = await listVolumes();
+    selectedVols = new Set(volumes.map((v) => v.path));
+    if (!selectedVols.has("/")) selectedVols.add("/");
+    volCursor = 0;
   }
 
   async function doScan() {
-    statusMsg = "Scanning home + external volumes…";
-    status.content = `  ${statusMsg}`;
-    statusMsg = "Scanning…";
-    scanResult = await scan({ includeVolumes: true, includeOptional: false });
-    screen = "scan";
-    renderScan();
+    if (busy) return;
+    busy = true;
+    setStatus("Scanning\u2026", COLORS.warn);
+    body.content = "\n  Scanning selected volumes\u2026\n";
+    try {
+      const volPaths = [...selectedVols];
+      scanResult = await scan({
+        includeVolumes: true,
+        includeOptional: cleanMode === "deep",
+        volumePaths: volPaths,
+        cleanMode,
+      });
+      renderScan();
+    } catch (e) {
+      setStatus(`Scan failed: ${String(e)}`, COLORS.danger);
+    } finally {
+      busy = false;
+    }
   }
 
   async function doClean(dryRun: boolean) {
+    if (busy) return;
     if (!scanResult) {
       await doScan();
     }
     if (!scanResult || scanResult.totalBytes === 0) {
-      statusMsg = "Nothing to clean";
-      renderDone("Already clean.");
+      setStatus("Nothing to clean", COLORS.ok);
+      renderDone("Already clean \u2014 nothing to reclaim.");
       return;
     }
-    statusMsg = dryRun ? "Dry run…" : "Cleaning…";
-    status.content = `  ${statusMsg}`;
-    const report = await clean(scanResult.items, {
-      dryRun,
-      yes: true,
-      includeOptional: false,
-      includeVolumes: true,
-    });
-    statusMsg = dryRun
-      ? `Would free ${bytesHuman(report.freedBytes)}`
-      : `Freed ${bytesHuman(report.freedBytes)}`;
-    screen = "done";
-    renderDone(
-      dryRun
-        ? `Dry run complete — would free ${bytesHuman(report.freedBytes)}`
-        : `Clean complete — freed ${bytesHuman(report.freedBytes)}`,
-    );
+    busy = true;
+    setStatus(dryRun ? "Dry run\u2026" : "Cleaning\u2026", COLORS.warn);
+    try {
+      const report = await clean(scanResult.items, {
+        dryRun,
+        yes: true,
+        includeOptional: cleanMode === "deep",
+        includeVolumes: true,
+        volumePaths: [...selectedVols],
+        cleanMode,
+      });
+      const label = dryRun
+        ? `Dry run \u00b7 would free ${bytesHuman(report.freedBytes)}`
+        : `Clean complete \u00b7 freed ${bytesHuman(report.freedBytes)}`;
+      setStatus(label, COLORS.ok);
+      renderDone(label);
+      if (!dryRun) scanResult = null;
+    } catch (e) {
+      setStatus(`Clean failed: ${String(e)}`, COLORS.danger);
+    } finally {
+      busy = false;
+    }
   }
 
   renderHome();
 
-  renderer.keyInput.on("keypress", (key) => {
+  renderer.keyInput.on("keypress", (key: { name?: string; sequence?: string }) => {
+    if (busy) return;
     const k = (key.name || "").toLowerCase();
+
     if (k === "q" || k === "escape") {
-      renderer.destroy();
+      if (screen !== "home" && k === "escape") {
+        renderHome();
+        return;
+      }
+      if (k === "q") {
+        renderer.destroy();
+      }
       return;
     }
-    if (k === "s") {
-      void doScan();
+
+    if (screen === "home") {
+      if (k === "up" || k === "k") {
+        modeCursor = 0;
+        cleanMode = "normal";
+        renderHome();
+        return;
+      }
+      if (k === "down" || k === "j") {
+        modeCursor = 1;
+        cleanMode = "deep";
+        renderHome();
+        return;
+      }
+      if (k === "1") {
+        modeCursor = 0;
+        cleanMode = "normal";
+        renderHome();
+        return;
+      }
+      if (k === "2") {
+        modeCursor = 1;
+        cleanMode = "deep";
+        renderHome();
+        return;
+      }
+      if (k === "return" || k === "enter") {
+        void (async () => {
+          setStatus("Loading volumes\u2026");
+          await loadVolumes();
+          renderVolumes();
+        })();
+        return;
+      }
       return;
     }
-    if (k === "c") {
-      void doClean(false);
+
+    if (screen === "volumes") {
+      if (k === "up" || k === "k") {
+        volCursor = Math.max(0, volCursor - 1);
+        renderVolumes();
+        return;
+      }
+      if (k === "down" || k === "j") {
+        volCursor = Math.min(Math.max(0, volumes.length - 1), volCursor + 1);
+        renderVolumes();
+        return;
+      }
+      if (k === "space") {
+        const v = volumes[volCursor];
+        if (v) {
+          if (selectedVols.has(v.path)) selectedVols.delete(v.path);
+          else selectedVols.add(v.path);
+          renderVolumes();
+        }
+        return;
+      }
+      if (k === "a") {
+        selectedVols = new Set(volumes.map((v) => v.path));
+        renderVolumes();
+        return;
+      }
+      if (k === "n") {
+        selectedVols = new Set();
+        renderVolumes();
+        return;
+      }
+      if (k === "return" || k === "enter" || k === "s") {
+        void doScan();
+        return;
+      }
+      if (k === "c") {
+        void doClean(false);
+        return;
+      }
+      if (k === "d") {
+        void doClean(true);
+        return;
+      }
+      const num = parseInt(k, 10);
+      if (num >= 1 && num <= 9 && volumes[num - 1]) {
+        const v = volumes[num - 1]!;
+        if (selectedVols.has(v.path)) selectedVols.delete(v.path);
+        else selectedVols.add(v.path);
+        volCursor = num - 1;
+        renderVolumes();
+        return;
+      }
       return;
     }
-    if (k === "d") {
-      void doClean(true);
-      return;
-    }
-    if (k === "h" || k === "home") {
-      screen = "home";
-      renderHome();
+
+    if (screen === "scan" || screen === "done") {
+      if (k === "c") {
+        void doClean(false);
+        return;
+      }
+      if (k === "d") {
+        void doClean(true);
+        return;
+      }
+      if (k === "s") {
+        void doScan();
+        return;
+      }
+      if (k === "v") {
+        void (async () => {
+          if (volumes.length === 0) await loadVolumes();
+          renderVolumes();
+        })();
+        return;
+      }
+      if (k === "h" || k === "home") {
+        renderHome();
+        return;
+      }
     }
   });
 }
