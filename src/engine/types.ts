@@ -11,6 +11,9 @@ export type Category =
   | "System"
   | "Volumes";
 
+/** normal = everyday safe junk; deep = aggressive but still allow-listed */
+export type CleanMode = "normal" | "deep";
+
 export interface CleanTarget {
   id: string;
   name: string;
@@ -23,10 +26,16 @@ export interface CleanTarget {
   command?: string;
   /** Only on external volumes when true */
   volumeOnly?: boolean;
-  /** Opt-in (e.g. Archives) */
+  /** Opt-in (e.g. Archives) — included automatically in deep mode */
   optional?: boolean;
   /** Estimated risk: low = always safe, medium = regenerable but costly */
   risk: "low" | "medium";
+  /**
+   * Minimum mode required.
+   * normal → always available
+   * deep → only when deep mode is selected
+   */
+  depth?: CleanMode;
 }
 
 export interface ScanItem {
@@ -38,6 +47,7 @@ export interface ScanItem {
   volume: string; // "/" for internal, mount path for external
   optional?: boolean;
   risk: "low" | "medium";
+  depth?: CleanMode;
 }
 
 export interface ScanResult {
@@ -45,6 +55,7 @@ export interface ScanResult {
   totalBytes: number;
   volumes: VolumeInfo[];
   scannedAt: string;
+  mode: CleanMode;
 }
 
 export interface VolumeInfo {
@@ -62,12 +73,25 @@ export interface CleanOptions {
   includeOptional: boolean;
   /** Limit to specific target ids */
   only?: string[];
-  /** Include external volumes */
+  /** Include external volumes (legacy) */
   includeVolumes: boolean;
+  /** Preferred: explicit volume paths to clean ("/" = home/internal) */
+  volumePaths?: string[];
+  /** normal | deep */
+  cleanMode: CleanMode;
 }
 
 export interface CleanReport {
   freedBytes: number;
   items: { id: string; name: string; bytes: number; status: "done" | "dry" | "skip" | "fail" }[];
   dryRun: boolean;
+  mode: CleanMode;
+}
+
+export interface ScanOptions {
+  includeVolumes?: boolean;
+  includeOptional?: boolean;
+  /** Restrict to these volume roots; "/" = internal/home */
+  volumePaths?: string[];
+  cleanMode?: CleanMode;
 }
