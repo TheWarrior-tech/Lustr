@@ -23,12 +23,10 @@ export function isPathSafe(target: string, homeDir: string, allowedRoots: string
 
   for (const p of PROTECTED_EXACT) {
     if (t === p || t.startsWith(p + "/")) {
-      // Allow specific known subpaths only via allowlist
       break;
     }
   }
 
-  // Must live under an allow-listed root
   for (const root of allowedRoots) {
     const r = norm(root);
     if (!r || r === "/") continue;
@@ -58,6 +56,9 @@ export function buildAllowedRoots(homeDir: string, volumePaths: string[]): strin
     `${homeDir}/Library/Caches/BraveSoftware`,
     `${homeDir}/Library/Caches/Microsoft Edge`,
     `${homeDir}/Library/Caches/company.thebrowser.Browser`,
+    `${homeDir}/Library/Caches/com.operasoftware.Opera`,
+    `${homeDir}/Library/Caches/Vivaldi`,
+    `${homeDir}/Library/Caches/Chromium`,
     `${homeDir}/Library/Caches/com.spotify.client`,
     `${homeDir}/Library/Caches/com.tinyspeck.slackmacgap`,
     `${homeDir}/Library/Caches/com.hnc.Discord`,
@@ -65,10 +66,29 @@ export function buildAllowedRoots(homeDir: string, volumePaths: string[]): strin
     `${homeDir}/Library/Caches/com.microsoft.VSCode`,
     `${homeDir}/Library/Caches/JetBrains`,
     `${homeDir}/Library/Caches/com.apple.dt.Xcode`,
+    `${homeDir}/Library/Caches/ru.keepcoder.Telegram`,
+    `${homeDir}/Library/Caches/notion.id`,
+    `${homeDir}/Library/Caches/com.figma.Desktop`,
+    `${homeDir}/Library/Caches/Adobe`,
+    `${homeDir}/Library/Caches/com.getdropbox.dropbox`,
+    `${homeDir}/Library/Caches/com.microsoft.OneDrive`,
+    `${homeDir}/Library/Caches/com.microsoft.teams`,
+    `${homeDir}/Library/Caches/md.obsidian`,
+    `${homeDir}/Library/Caches/com.linear`,
+    `${homeDir}/Library/Caches/com.raycast.macos`,
+    `${homeDir}/Library/Caches/CloudKit`,
+    `${homeDir}/Library/Caches/com.apple.FontRegistry`,
+    `${homeDir}/Library/Caches/com.apple.QuickLook.thumbnailcache`,
+    `${homeDir}/Library/Caches/com.apple.Music`,
+    `${homeDir}/Library/Caches/com.apple.TV`,
+    `${homeDir}/Library/Caches/com.apple.Photos`,
+    `${homeDir}/Library/Caches/ms-playwright`,
+    `${homeDir}/Library/Caches/Cypress`,
     `${homeDir}/Library/HTTPStorages`,
     `${homeDir}/Library/WebKit`,
     `${homeDir}/Library/Saved Application State`,
     `${homeDir}/.npm/_cacache`,
+    `${homeDir}/.npm/_logs`,
     `${homeDir}/.yarn/cache`,
     `${homeDir}/.cache/yarn`,
     `${homeDir}/.cache/pip`,
@@ -76,9 +96,16 @@ export function buildAllowedRoots(homeDir: string, volumePaths: string[]): strin
     `${homeDir}/.pnpm-store`,
     `${homeDir}/Library/pnpm/store`,
     `${homeDir}/.cargo/registry/cache`,
+    `${homeDir}/.cargo/git/checkouts`,
     `${homeDir}/.gradle/caches`,
     `${homeDir}/.bun/install/cache`,
     `${homeDir}/Library/Caches/go-build`,
+    `${homeDir}/.android/build-cache`,
+    `${homeDir}/.android/cache`,
+    `${homeDir}/.pub-cache`,
+    `${homeDir}/.composer/cache`,
+    `${homeDir}/.m2/repository`,
+    `${homeDir}/Library/Application Support/Steam/appcache`,
   ];
 
   for (const v of volumePaths) {
@@ -86,6 +113,7 @@ export function buildAllowedRoots(homeDir: string, volumePaths: string[]): strin
     roots.push(`${v}/.Spotlight-V100`);
     roots.push(`${v}/.fseventsd`);
     roots.push(`${v}/.TemporaryItems`);
+    roots.push(`${v}/.DocumentRevisions-V100`);
   }
 
   return roots;
